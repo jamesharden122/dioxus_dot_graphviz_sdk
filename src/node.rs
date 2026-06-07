@@ -88,16 +88,17 @@ impl GraphNodeKind {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct Node {
+pub struct Node<Tool = ()> {
     pub id: String,
     pub label: String,
     pub detail: String,
     pub kind: GraphNodeKind,
     pub shape: GraphNodeShape,
     pub active: bool,
+    pub tool: Tool,
 }
 
-impl Node {
+impl Node<()> {
     pub fn new(
         id: impl Into<String>,
         label: impl Into<String>,
@@ -111,11 +112,44 @@ impl Node {
             kind,
             shape: kind.default_shape(),
             active: true,
+            tool: (),
+        }
+    }
+}
+
+impl<Tool> Node<Tool> {
+    pub fn new_with_tool(
+        id: impl Into<String>,
+        label: impl Into<String>,
+        detail: impl Into<String>,
+        kind: GraphNodeKind,
+        tool: Tool,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            label: label.into(),
+            detail: detail.into(),
+            kind,
+            shape: kind.default_shape(),
+            active: true,
+            tool,
         }
     }
 
     pub fn with_shape(mut self, shape: GraphNodeShape) -> Self {
         self.shape = shape;
         self
+    }
+
+    pub fn with_tool<NextTool>(self, tool: NextTool) -> Node<NextTool> {
+        Node {
+            id: self.id,
+            label: self.label,
+            detail: self.detail,
+            kind: self.kind,
+            shape: self.shape,
+            active: self.active,
+            tool,
+        }
     }
 }

@@ -8,5 +8,6 @@ description = "Dioxus SDK components for DOT/Graphviz-style graph canvases."
 dioxus = { version = "0.7.9" }
 geo = { version = "0.33.1", features = ["serde"] }
 petgraph = "0.8.3"
+rayon = { version = "1.12", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

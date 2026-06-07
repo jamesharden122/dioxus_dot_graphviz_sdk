@@ -1,25 +1,33 @@
-use crate::{edge::Edge, node::Node};
+use crate::{
+    edge::{Edge, GraphEdgeKind},
+    node::Node,
+};
 use petgraph::stable_graph::{NodeIndex, StableGraph};
 use serde::Deserialize;
 use std::{error::Error, fmt};
 
 #[derive(Clone, Debug)]
-pub struct Graph {
-    state: StableGraph<Node, Edge>,
+pub struct Graph<NodeTool = (), EdgeTool = ()> {
+    state: StableGraph<Node<NodeTool>, Edge<EdgeTool>>,
+    layers: Vec<Vec<NodeIndex>>,
 }
 
-impl Graph {
+impl<NodeTool, EdgeTool> Graph<NodeTool, EdgeTool> {
     pub fn new() -> Self {
         Self {
             state: StableGraph::new(),
+            layers: Vec::new(),
         }
     }
 
-    pub fn from_parts(nodes: Vec<Node>, edges: Vec<Edge>) -> Self {
+    pub fn from_parts(nodes: Vec<Node<NodeTool>>, edges: Vec<Edge<EdgeTool>>) -> Self {
         Self::try_from_parts(nodes, edges).expect("graph parts must reference existing nodes")
     }
 
-    pub fn try_from_parts(nodes: Vec<Node>, edges: Vec<Edge>) -> Result<Self, GraphBuildError> {
+    pub fn try_from_parts(
+        nodes: Vec<Node<NodeTool>>,
+        edges: Vec<Edge<EdgeTool>>,
+    ) -> Result<Self, GraphBuildError> {
         let mut graph = Self::new();
 
         for node in nodes {
@@ -27,28 +35,69 @@ impl Graph {
         }
 
         for edge in edges {
-            if !graph.add_edge(edge.clone()) {
-                return Err(GraphBuildError::MissingEdgeEndpoint {
-                    edge_id: edge.id,
-                    from: edge.from,
-                    to: edge.to,
-                });
+            let edge_id = edge.id.clone();
+            let from = edge.from.clone();
+            let to = edge.to.clone();
+            if !graph.add_edge(edge) {
+                return Err(GraphBuildError::MissingEdgeEndpoint { edge_id, from, to });
             }
         }
 
         Ok(graph)
     }
 
-    pub fn from_json(json: &str) -> Result<Self, GraphJsonError> {
-        let graph: GraphJson = serde_json::from_str(json)?;
+    pub fn from_json(json: &str) -> Result<Self, GraphJsonError>
+    where
+        NodeTool: for<'de> Deserialize<'de>,
+        EdgeTool: for<'de> Deserialize<'de>,
+    {
+        let graph: GraphJson<NodeTool, EdgeTool> = serde_json::from_str(json)?;
         Self::try_from_parts(graph.nodes, graph.edges).map_err(GraphJsonError::Build)
     }
 
-    pub fn add_node(&mut self, node: Node) -> NodeIndex {
+    pub fn add_node(&mut self, node: Node<NodeTool>) -> NodeIndex {
         self.state.add_node(node)
     }
 
-    pub fn add_edge(&mut self, edge: Edge) -> bool {
+    pub fn add_layer_with_edges<F>(
+        &mut self,
+        nodes: impl IntoIterator<Item = Node<NodeTool>>,
+        mut edge_builder: F,
+    ) -> Result<Vec<NodeIndex>, GraphBuildError>
+    where
+        F: FnMut(&Node<NodeTool>, &Node<NodeTool>) -> Option<Edge<EdgeTool>>,
+    {
+        let previous_layer = self.layers.last().cloned().unwrap_or_default();
+        let new_layer = nodes
+            .into_iter()
+            .map(|node| self.add_node(node))
+            .collect::<Vec<_>>();
+
+        let mut edges = Vec::new();
+        for from_idx in &previous_layer {
+            for to_idx in &new_layer {
+                let from = &self.state[*from_idx];
+                let to = &self.state[*to_idx];
+                if let Some(edge) = edge_builder(from, to) {
+                    edges.push(edge);
+                }
+            }
+        }
+
+        for edge in edges {
+            let edge_id = edge.id.clone();
+            let from = edge.from.clone();
+            let to = edge.to.clone();
+            if !self.add_edge(edge) {
+                return Err(GraphBuildError::MissingEdgeEndpoint { edge_id, from, to });
+            }
+        }
+
+        self.layers.push(new_layer.clone());
+        Ok(new_layer)
+    }
+
+    pub fn add_edge(&mut self, edge: Edge<EdgeTool>) -> bool {
         let Some(from) = self.node_graph_index(&edge.from) else {
             return false;
         };
@@ -60,12 +109,16 @@ impl Graph {
         true
     }
 
-    pub fn nodes(&self) -> impl Iterator<Item = &Node> + '_ {
+    pub fn nodes(&self) -> impl Iterator<Item = &Node<NodeTool>> + '_ {
         self.state.node_weights()
     }
 
-    pub fn edges(&self) -> impl Iterator<Item = &Edge> + '_ {
+    pub fn edges(&self) -> impl Iterator<Item = &Edge<EdgeTool>> + '_ {
         self.state.edge_weights()
+    }
+
+    pub fn layers(&self) -> &[Vec<NodeIndex>] {
+        &self.layers
     }
 
     pub fn node_index(&self, id: &str) -> Option<usize> {
@@ -79,10 +132,27 @@ impl Graph {
     }
 }
 
+impl<NodeTool> Graph<NodeTool, ()> {
+    pub fn add_layer(
+        &mut self,
+        nodes: impl IntoIterator<Item = Node<NodeTool>>,
+        edge_kind: GraphEdgeKind,
+    ) -> Result<Vec<NodeIndex>, GraphBuildError> {
+        self.add_layer_with_edges(nodes, |from, to| {
+            Some(Edge::new(
+                format!("{}->{}", from.id, to.id),
+                from.id.clone(),
+                to.id.clone(),
+                edge_kind,
+            ))
+        })
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-struct GraphJson {
-    nodes: Vec<Node>,
-    edges: Vec<Edge>,
+struct GraphJson<NodeTool = (), EdgeTool = ()> {
+    nodes: Vec<Node<NodeTool>>,
+    edges: Vec<Edge<EdgeTool>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -137,7 +207,7 @@ impl From<serde_json::Error> for GraphJsonError {
     }
 }
 
-impl Default for Graph {
+impl<NodeTool, EdgeTool> Default for Graph<NodeTool, EdgeTool> {
     fn default() -> Self {
         Self::new()
     }
@@ -163,7 +233,8 @@ pub const EXAMPLE_GRAPH_JSON: &str = r#"
           "interiors": []
         }
       },
-      "active": true
+      "active": true,
+    "tool": null
     },
     {
       "id": "ProbabilitySpace",
@@ -182,7 +253,8 @@ pub const EXAMPLE_GRAPH_JSON: &str = r#"
           "interiors": []
         }
       },
-      "active": true
+      "active": true,
+    "tool": null
     },
     {
       "id": "SecurityReturnProcesses",
@@ -201,7 +273,8 @@ pub const EXAMPLE_GRAPH_JSON: &str = r#"
           "interiors": []
         }
       },
-      "active": true
+      "active": true,
+    "tool": null
     },
     {
       "id": "Weights",
@@ -220,7 +293,8 @@ pub const EXAMPLE_GRAPH_JSON: &str = r#"
           "interiors": []
         }
       },
-      "active": true
+      "active": true,
+    "tool": null
     },
     {
       "id": "PortfolioExpectedReturn",
@@ -233,7 +307,8 @@ pub const EXAMPLE_GRAPH_JSON: &str = r#"
           "max": { "x": 0.5, "y": 0.3 }
         }
       },
-      "active": true
+      "active": true,
+    "tool": null
     },
     {
       "id": "PortfolioVariance",
@@ -254,7 +329,8 @@ pub const EXAMPLE_GRAPH_JSON: &str = r#"
           "interiors": []
         }
       },
-      "active": true
+      "active": true,
+    "tool": null
     },
     {
       "id": "PortfolioSkewness",
@@ -277,7 +353,8 @@ pub const EXAMPLE_GRAPH_JSON: &str = r#"
           "interiors": []
         }
       },
-      "active": true
+      "active": true,
+    "tool": null
     },
     {
       "id": "Utility",
@@ -296,7 +373,8 @@ pub const EXAMPLE_GRAPH_JSON: &str = r#"
           "interiors": []
         }
       },
-      "active": true
+      "active": true,
+    "tool": null
     }
   ],
   "edges": [
@@ -305,84 +383,96 @@ pub const EXAMPLE_GRAPH_JSON: &str = r#"
       "from": "D",
       "to": "ProbabilitySpace",
       "kind": "data",
-      "active": true
+      "active": true,
+    "tool": null
     },
     {
       "id": "ProbabilitySpace->SecurityReturnProcesses",
       "from": "ProbabilitySpace",
       "to": "SecurityReturnProcesses",
       "kind": "process",
-      "active": true
+      "active": true,
+    "tool": null
     },
     {
       "id": "SecurityReturnProcesses->Weights",
       "from": "SecurityReturnProcesses",
       "to": "Weights",
       "kind": "process",
-      "active": true
+      "active": true,
+    "tool": null
     },
     {
       "id": "SecurityReturnProcesses->PortfolioExpectedReturn",
       "from": "SecurityReturnProcesses",
       "to": "PortfolioExpectedReturn",
       "kind": "state_contribution",
-      "active": true
+      "active": true,
+    "tool": null
     },
     {
       "id": "SecurityReturnProcesses->PortfolioVariance",
       "from": "SecurityReturnProcesses",
       "to": "PortfolioVariance",
       "kind": "state_contribution",
-      "active": true
+      "active": true,
+    "tool": null
     },
     {
       "id": "SecurityReturnProcesses->PortfolioSkewness",
       "from": "SecurityReturnProcesses",
       "to": "PortfolioSkewness",
       "kind": "state_contribution",
-      "active": true
+      "active": true,
+    "tool": null
     },
     {
       "id": "Weights->PortfolioExpectedReturn",
       "from": "Weights",
       "to": "PortfolioExpectedReturn",
       "kind": "decision_contribution",
-      "active": true
+      "active": true,
+    "tool": null
     },
     {
       "id": "Weights->PortfolioVariance",
       "from": "Weights",
       "to": "PortfolioVariance",
       "kind": "decision_contribution",
-      "active": true
+      "active": true,
+    "tool": null
     },
     {
       "id": "Weights->PortfolioSkewness",
       "from": "Weights",
       "to": "PortfolioSkewness",
       "kind": "decision_contribution",
-      "active": true
+      "active": true,
+    "tool": null
     },
     {
       "id": "PortfolioExpectedReturn->Utility",
       "from": "PortfolioExpectedReturn",
       "to": "Utility",
       "kind": "utility_aggregation",
-      "active": true
+      "active": true,
+    "tool": null
     },
     {
       "id": "PortfolioVariance->Utility",
       "from": "PortfolioVariance",
       "to": "Utility",
       "kind": "utility_aggregation",
-      "active": true
+      "active": true,
+    "tool": null
     },
     {
       "id": "PortfolioSkewness->Utility",
       "from": "PortfolioSkewness",
       "to": "Utility",
       "kind": "utility_aggregation",
-      "active": true
+      "active": true,
+    "tool": null
     }
   ]
 }
@@ -395,10 +485,79 @@ pub fn example_graph() -> Graph {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::node::GraphNodeKind;
+
+    #[test]
+    fn add_layer_connects_from_previous_layer() {
+        let mut graph = Graph::new();
+
+        graph
+            .add_layer(
+                vec![Node::new("A", "Input", "source", GraphNodeKind::Input)],
+                GraphEdgeKind::Process,
+            )
+            .expect("first layer should build");
+        graph
+            .add_layer(
+                vec![
+                    Node::new("B", "State B", "target", GraphNodeKind::State),
+                    Node::new("C", "State C", "target", GraphNodeKind::State),
+                ],
+                GraphEdgeKind::Process,
+            )
+            .expect("second layer should connect");
+
+        assert_eq!(graph.layers().len(), 2);
+        assert_eq!(graph.nodes().count(), 3);
+        assert_eq!(graph.edges().count(), 2);
+    }
+
+    #[test]
+    fn add_layer_accepts_custom_tool_payloads() {
+        let mut graph: Graph<String, String> = Graph::new();
+
+        graph
+            .add_layer_with_edges(
+                vec![Node::new_with_tool(
+                    "A",
+                    "Input",
+                    "source",
+                    GraphNodeKind::Input,
+                    "node-tool-a".to_string(),
+                )],
+                |_from, _to| None,
+            )
+            .expect("first layer should build");
+        graph
+            .add_layer_with_edges(
+                vec![Node::new_with_tool(
+                    "B",
+                    "State",
+                    "target",
+                    GraphNodeKind::State,
+                    "node-tool-b".to_string(),
+                )],
+                |from: &Node<String>, to: &Node<String>| {
+                    Some(Edge::new_with_tool(
+                        format!("{}->{}", from.id, to.id),
+                        from.id.clone(),
+                        to.id.clone(),
+                        GraphEdgeKind::Process,
+                        "edge-tool".to_string(),
+                    ))
+                },
+            )
+            .expect("second layer should connect");
+
+        assert_eq!(
+            graph.edges().next().map(|edge| edge.tool.as_str()),
+            Some("edge-tool")
+        );
+    }
 
     #[test]
     fn builds_graph_from_json_with_explicit_shape() {
-        let graph = Graph::from_json(
+        let graph: Graph = Graph::from_json(
             r#"
             {
               "nodes": [
@@ -413,7 +572,8 @@ mod tests {
                       "max": { "x": 0.5, "y": 0.3 }
                     }
                   },
-                  "active": true
+                  "active": true,
+                "tool": null
                 },
                 {
                   "id": "B",
@@ -426,7 +586,8 @@ mod tests {
                       "max": { "x": 0.5, "y": 0.3 }
                     }
                   },
-                  "active": true
+                  "active": true,
+                "tool": null
                 }
               ],
               "edges": [
@@ -435,7 +596,8 @@ mod tests {
                   "from": "A",
                   "to": "B",
                   "kind": "data",
-                  "active": true
+                  "active": true,
+                "tool": null
                 }
               ]
             }
@@ -449,7 +611,7 @@ mod tests {
 
     #[test]
     fn from_json_rejects_missing_shape() {
-        let error = Graph::from_json(
+        let error = Graph::<(), ()>::from_json(
             r#"
             {
               "nodes": [
@@ -458,7 +620,8 @@ mod tests {
                   "label": "Input",
                   "detail": "source",
                   "kind": "input",
-                  "active": true
+                  "active": true,
+                "tool": null
                 }
               ],
               "edges": []

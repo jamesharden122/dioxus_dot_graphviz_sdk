@@ -23,15 +23,16 @@ impl GraphEdgeKind {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub struct Edge {
+pub struct Edge<Tool = ()> {
     pub id: String,
     pub from: String,
     pub to: String,
     pub kind: GraphEdgeKind,
     pub active: bool,
+    pub tool: Tool,
 }
 
-impl Edge {
+impl Edge<()> {
     pub fn new(
         id: impl Into<String>,
         from: impl Into<String>,
@@ -44,6 +45,37 @@ impl Edge {
             to: to.into(),
             kind,
             active: true,
+            tool: (),
+        }
+    }
+}
+
+impl<Tool> Edge<Tool> {
+    pub fn new_with_tool(
+        id: impl Into<String>,
+        from: impl Into<String>,
+        to: impl Into<String>,
+        kind: GraphEdgeKind,
+        tool: Tool,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            from: from.into(),
+            to: to.into(),
+            kind,
+            active: true,
+            tool,
+        }
+    }
+
+    pub fn with_tool<NextTool>(self, tool: NextTool) -> Edge<NextTool> {
+        Edge {
+            id: self.id,
+            from: self.from,
+            to: self.to,
+            kind: self.kind,
+            active: self.active,
+            tool,
         }
     }
 }

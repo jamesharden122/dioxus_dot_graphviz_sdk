@@ -633,6 +633,7 @@ dependencies = [
  "dioxus",
  "geo",
  "petgraph",
+ "rayon",
  "serde",
  "serde_json",
 ]

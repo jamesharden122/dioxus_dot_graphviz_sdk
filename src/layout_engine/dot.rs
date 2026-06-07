@@ -9,27 +9,27 @@ pub struct GraphPoint {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct LayoutNode {
-    pub node: Node,
+pub struct LayoutNode<NodeTool = ()> {
+    pub node: Node<NodeTool>,
     pub position: GraphPoint,
     pub geometry: Option<GraphNodeGeometry>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct LayoutEdge {
-    pub edge: Edge,
+pub struct LayoutEdge<EdgeTool = ()> {
+    pub edge: Edge<EdgeTool>,
     pub source: GraphPoint,
     pub target: GraphPoint,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct LayoutGraph {
-    pub nodes: Vec<LayoutNode>,
-    pub edges: Vec<LayoutEdge>,
+pub struct LayoutGraph<NodeTool = (), EdgeTool = ()> {
+    pub nodes: Vec<LayoutNode<NodeTool>>,
+    pub edges: Vec<LayoutEdge<EdgeTool>>,
 }
 
-pub trait LayoutEngine {
-    fn layout(&self, graph: &Graph) -> LayoutGraph;
+pub trait LayoutEngine<NodeTool = (), EdgeTool = ()> {
+    fn layout(&self, graph: &Graph<NodeTool, EdgeTool>) -> LayoutGraph<NodeTool, EdgeTool>;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -56,8 +56,12 @@ pub struct DotLayoutEngine {
     pub options: DotLayoutOptions,
 }
 
-impl LayoutEngine for DotLayoutEngine {
-    fn layout(&self, graph: &Graph) -> LayoutGraph {
+impl<NodeTool, EdgeTool> LayoutEngine<NodeTool, EdgeTool> for DotLayoutEngine
+where
+    NodeTool: Clone,
+    EdgeTool: Clone,
+{
+    fn layout(&self, graph: &Graph<NodeTool, EdgeTool>) -> LayoutGraph<NodeTool, EdgeTool> {
         let ranks = hierarchical_ranks(graph);
         let positions = rank_positions(&ranks, self.options);
 
@@ -93,7 +97,7 @@ impl LayoutEngine for DotLayoutEngine {
     }
 }
 
-pub fn graph_to_dot(graph: &Graph) -> String {
+pub fn graph_to_dot<NodeTool, EdgeTool>(graph: &Graph<NodeTool, EdgeTool>) -> String {
     let mut dot = String::from("digraph G {\n  rankdir=TB;\n");
 
     for node in graph.nodes() {
@@ -120,7 +124,7 @@ pub fn graph_to_dot(graph: &Graph) -> String {
     dot
 }
 
-fn hierarchical_ranks(graph: &Graph) -> Vec<usize> {
+fn hierarchical_ranks<NodeTool, EdgeTool>(graph: &Graph<NodeTool, EdgeTool>) -> Vec<usize> {
     let nodes: Vec<_> = graph.nodes().collect();
     let node_count = nodes.len();
     let mut node_indices = HashMap::with_capacity(node_count);

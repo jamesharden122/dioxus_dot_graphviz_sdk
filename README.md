@@ -59,7 +59,7 @@ Load a graph from JSON:
 ```rust
 use dioxus_dot_graphviz_sdk::Graph;
 
-let graph = Graph::from_json(r#"
+let graph: Graph = Graph::from_json(r#"
 {
   "nodes": [
     {
@@ -73,7 +73,8 @@ let graph = Graph::from_json(r#"
           "max": { "x": 0.5, "y": 0.3 }
         }
       },
-      "active": true
+      "active": true,
+      "tool": null
     }
   ],
   "edges": []
@@ -81,7 +82,29 @@ let graph = Graph::from_json(r#"
 "#).expect("JSON graph should load");
 ```
 
-The JSON loader does not fill defaults: `id`, `label`, `detail`, `kind`, `shape`, and `active` are required for each node, and `id`, `from`, `to`, `kind`, and `active` are required for each edge.
+The JSON loader does not fill defaults: `id`, `label`, `detail`, `kind`, `shape`, `active`, and `tool` are required for each node, and `id`, `from`, `to`, `kind`, `active`, and `tool` are required for each edge. Use `Graph<MyNodeTool, MyEdgeTool>` to deserialize caller-owned tool payloads without this crate importing those tool modules.
+
+Rayon is available without default features through `dioxus_dot_graphviz_sdk::rayon`, and its prelude is re-exported from `dioxus_dot_graphviz_sdk::parallel`.
+
+Build a graph layer by layer:
+
+```rust
+use dioxus_dot_graphviz_sdk::{Graph, GraphEdgeKind, GraphNodeKind, Node};
+
+let mut graph = Graph::new();
+
+graph.add_layer(
+    vec![Node::new("input", "Input", "source", GraphNodeKind::Input)],
+    GraphEdgeKind::Process,
+).expect("layer should be valid");
+
+graph.add_layer(
+    vec![Node::new("state", "State", "target", GraphNodeKind::State)],
+    GraphEdgeKind::Process,
+).expect("layer should connect");
+```
+
+For custom edge tool payloads, use `add_layer_with_edges` and return `Edge<MyEdgeTool>` values from the closure.
 
 ## Node Kinds And Shapes
 

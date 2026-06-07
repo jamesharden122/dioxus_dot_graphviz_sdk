@@ -15,7 +15,12 @@ pub use layout_engine::dot::{
     LayoutGraph, LayoutNode,
 };
 pub use node::{GraphNodeKind, Node};
+pub use rayon;
 pub use shape::{GraphNodeGeometry, GraphNodeShape};
+
+pub mod parallel {
+    pub use rayon::prelude::*;
+}
 
 #[component]
 fn node_object(node: LayoutNode) -> Element {
