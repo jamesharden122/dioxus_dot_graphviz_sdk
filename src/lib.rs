@@ -1,17 +1,21 @@
+#![doc = include_str!("../README.md")]
+
 pub mod edge;
 pub mod graph;
 pub mod layout_engine;
 pub mod node;
+pub mod shape;
 
 use dioxus::prelude::*;
 
 pub use edge::{Edge, GraphEdgeKind};
-pub use graph::{example_graph, Graph};
+pub use graph::{example_graph, Graph, GraphBuildError, GraphJsonError, EXAMPLE_GRAPH_JSON};
 pub use layout_engine::dot::{
     graph_to_dot, DotLayoutEngine, DotLayoutOptions, GraphPoint, LayoutEdge, LayoutEngine,
     LayoutGraph, LayoutNode,
 };
 pub use node::{GraphNodeKind, Node};
+pub use shape::{GraphNodeGeometry, GraphNodeShape};
 
 #[component]
 fn node_object(node: LayoutNode) -> Element {
@@ -21,8 +25,9 @@ fn node_object(node: LayoutNode) -> Element {
         "is-inactive"
     };
     let class = format!(
-        "graph-node graph-node--{} {active_class}",
-        node.node.kind.css_class()
+        "graph-node graph-node--{} graph-node-shape--{} {active_class}",
+        node.node.kind.css_class(),
+        node.node.shape.css_class()
     );
     let style = format!(
         "left: {:.2}%; top: {:.2}%;",
@@ -53,14 +58,30 @@ fn edge_object(edge: LayoutEdge) -> Element {
         "graph-edge graph-edge--{} {active_class}",
         edge.edge.kind.css_class()
     );
+    let dx = edge.target.x - edge.source.x;
+    let dy = edge.target.y - edge.source.y;
+    let bend = if dx.abs() < 0.1 && dy.abs() > 24.0 {
+        8.0
+    } else {
+        0.0
+    };
+    let path = format!(
+        "M {:.2} {:.2} C {:.2} {:.2}, {:.2} {:.2}, {:.2} {:.2}",
+        edge.source.x,
+        edge.source.y,
+        edge.source.x + bend,
+        edge.source.y + dy * 0.45,
+        edge.target.x + bend,
+        edge.target.y - dy * 0.45,
+        edge.target.x,
+        edge.target.y
+    );
 
     rsx! {
-        line {
+        path {
             class: "{class}",
-            x1: "{edge.source.x}",
-            y1: "{edge.source.y}",
-            x2: "{edge.target.x}",
-            y2: "{edge.target.y}",
+            d: "{path}",
+            fill: "none",
         }
     }
 }

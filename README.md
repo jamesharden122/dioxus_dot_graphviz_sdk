@@ -6,8 +6,11 @@ The crate is split into focused modules:
 
 - `graph`: graph container and example graph data.
 - `node`: node data and node kind metadata.
+- `shape`: DOT/Graphviz polygon-based node shape metadata.
 - `edge`: directed edge data and edge kind metadata.
 - `layout_engine::dot`: hierarchical/layered layout for directed graphs, plus DOT export.
+
+This README is included as the crate-level documentation with `include_str!`.
 
 ## Usage
 
@@ -51,6 +54,53 @@ use dioxus_dot_graphviz_sdk::{example_graph, graph_to_dot};
 let dot = graph_to_dot(&example_graph());
 ```
 
+Load a graph from JSON:
+
+```rust
+use dioxus_dot_graphviz_sdk::Graph;
+
+let graph = Graph::from_json(r#"
+{
+  "nodes": [
+    {
+      "id": "A",
+      "label": "Input",
+      "detail": "source",
+      "kind": "input",
+      "shape": {
+        "box": {
+          "min": { "x": -0.5, "y": -0.3 },
+          "max": { "x": 0.5, "y": 0.3 }
+        }
+      },
+      "active": true
+    }
+  ],
+  "edges": []
+}
+"#).expect("JSON graph should load");
+```
+
+The JSON loader does not fill defaults: `id`, `label`, `detail`, `kind`, `shape`, and `active` are required for each node, and `id`, `from`, `to`, `kind`, and `active` are required for each edge.
+
+## Node Kinds And Shapes
+
+`GraphNodeKind` describes what a node means in the computational graph, such as input, state, decision variable, risk component, or utility.
+
+`GraphNodeShape` describes how a node should be drawn when exported to DOT/Graphviz. The enum covers the polygon-based shapes from Graphviz, including common forms like `Box`, `Ellipse`, `Circle`, `Diamond`, `Hexagon`, `Octagon`, `Cylinder`, `Folder`, `Component`, and the Graphviz-specific `MDiamond`, `MSquare`, and `MCircle`.
+
+Each `Node::new` assigns a default shape from its semantic kind. Override it explicitly when the drawing needs a different visual grammar:
+
+```rust
+use dioxus_dot_graphviz_sdk::{GraphNodeKind, GraphNodeShape, Node};
+use geo::Rect;
+
+let node = Node::new("Weights", "Decision weights", "allocator", GraphNodeKind::DecisionVariable)
+    .with_shape(GraphNodeShape::Oval(Rect::new((-0.55, -0.32), (0.55, 0.32)).to_polygon()));
+```
+
+Layout output includes each node's geometry metadata. `LayoutNode::geometry` contains the `geo::Geometry`, its layout `row`, and the bounding `width` and `height`.
+
 ## Styling
 
 The component expects the consuming app to provide CSS classes such as:
@@ -60,7 +110,7 @@ The component expects the consuming app to provide CSS classes such as:
 - `graph-edge-layer`
 - `graph-node-layer`
 - `graph-node`
+- `graph-node-shape--diamond`
 - `graph-edge`
 
 `agent_factors_ui` already defines these classes in its app stylesheet.
-# dioxus_dot_graphviz_sdk

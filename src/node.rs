@@ -1,4 +1,9 @@
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+use crate::shape::GraphNodeShape;
+use geo::{Polygon, Rect};
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum GraphNodeKind {
     Input,
     State,
@@ -33,30 +38,84 @@ impl GraphNodeKind {
             Self::Utility => "utility",
         }
     }
+
+    pub fn default_shape(self) -> GraphNodeShape {
+        match self {
+            Self::Input => {
+                GraphNodeShape::Cylinder(Rect::new((-0.5, -0.35), (0.5, 0.35)).to_polygon())
+            }
+            Self::State => {
+                GraphNodeShape::Ellipse(Rect::new((-0.55, -0.35), (0.55, 0.35)).to_polygon())
+            }
+            Self::DecisionVariable => GraphNodeShape::Diamond(Polygon::new(
+                vec![(0.0, 0.5), (0.5, 0.0), (0.0, -0.5), (-0.5, 0.0), (0.0, 0.5)].into(),
+                vec![],
+            )),
+            Self::PortfolioComponent => GraphNodeShape::Box(Rect::new((-0.5, -0.3), (0.5, 0.3))),
+            Self::PortfolioRiskComponent => GraphNodeShape::Hexagon(Polygon::new(
+                vec![
+                    (-0.5, 0.0),
+                    (-0.25, 0.43),
+                    (0.25, 0.43),
+                    (0.5, 0.0),
+                    (0.25, -0.43),
+                    (-0.25, -0.43),
+                    (-0.5, 0.0),
+                ]
+                .into(),
+                vec![],
+            )),
+            Self::PortfolioAsymmetryComponent => GraphNodeShape::Octagon(Polygon::new(
+                vec![
+                    (-0.2, 0.5),
+                    (0.2, 0.5),
+                    (0.5, 0.2),
+                    (0.5, -0.2),
+                    (0.2, -0.5),
+                    (-0.2, -0.5),
+                    (-0.5, -0.2),
+                    (-0.5, 0.2),
+                    (-0.2, 0.5),
+                ]
+                .into(),
+                vec![],
+            )),
+            Self::Utility => {
+                GraphNodeShape::DoubleCircle(Rect::new((-0.5, -0.5), (0.5, 0.5)).to_polygon())
+            }
+        }
+    }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Node {
-    pub id: &'static str,
-    pub label: &'static str,
-    pub detail: &'static str,
+    pub id: String,
+    pub label: String,
+    pub detail: String,
     pub kind: GraphNodeKind,
+    pub shape: GraphNodeShape,
     pub active: bool,
 }
 
 impl Node {
-    pub const fn new(
-        id: &'static str,
-        label: &'static str,
-        detail: &'static str,
+    pub fn new(
+        id: impl Into<String>,
+        label: impl Into<String>,
+        detail: impl Into<String>,
         kind: GraphNodeKind,
     ) -> Self {
         Self {
-            id,
-            label,
-            detail,
+            id: id.into(),
+            label: label.into(),
+            detail: detail.into(),
             kind,
+            shape: kind.default_shape(),
             active: true,
         }
+    }
+
+    pub fn with_shape(mut self, shape: GraphNodeShape) -> Self {
+        self.shape = shape;
+        self
     }
 }

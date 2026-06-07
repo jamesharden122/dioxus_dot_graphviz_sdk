@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap, VecDeque};
 
-use crate::{edge::Edge, graph::Graph, node::Node};
+use crate::{edge::Edge, graph::Graph, node::Node, shape::GraphNodeGeometry};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GraphPoint {
@@ -12,6 +12,7 @@ pub struct GraphPoint {
 pub struct LayoutNode {
     pub node: Node,
     pub position: GraphPoint,
+    pub geometry: Option<GraphNodeGeometry>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -61,22 +62,25 @@ impl LayoutEngine for DotLayoutEngine {
         let positions = rank_positions(&ranks, self.options);
 
         let nodes = graph
-            .nodes
-            .iter()
+            .nodes()
             .cloned()
             .enumerate()
-            .map(|(idx, node)| LayoutNode {
-                node,
-                position: positions[idx],
+            .map(|(idx, node)| {
+                let geometry = node.shape.geometry_for_row(ranks[idx]);
+
+                LayoutNode {
+                    node,
+                    position: positions[idx],
+                    geometry,
+                }
             })
             .collect();
 
         let edges = graph
-            .edges
-            .iter()
+            .edges()
             .filter_map(|edge| {
-                let from = graph.node_index(edge.from)?;
-                let to = graph.node_index(edge.to)?;
+                let from = graph.node_index(&edge.from)?;
+                let to = graph.node_index(&edge.to)?;
                 Some(LayoutEdge {
                     edge: edge.clone(),
                     source: positions[from],
@@ -92,21 +96,23 @@ impl LayoutEngine for DotLayoutEngine {
 pub fn graph_to_dot(graph: &Graph) -> String {
     let mut dot = String::from("digraph G {\n  rankdir=TB;\n");
 
-    for node in &graph.nodes {
+    for node in graph.nodes() {
         dot.push_str("  \"");
-        dot.push_str(&escape_dot(node.id));
+        dot.push_str(&escape_dot(&node.id));
         dot.push_str("\" [label=\"");
-        dot.push_str(&escape_dot(node.label));
+        dot.push_str(&escape_dot(&node.label));
+        dot.push_str("\", shape=\"");
+        dot.push_str(node.shape.dot_name());
         dot.push_str("\"];\n");
     }
 
-    for edge in &graph.edges {
+    for edge in graph.edges() {
         dot.push_str("  \"");
-        dot.push_str(&escape_dot(edge.from));
+        dot.push_str(&escape_dot(&edge.from));
         dot.push_str("\" -> \"");
-        dot.push_str(&escape_dot(edge.to));
+        dot.push_str(&escape_dot(&edge.to));
         dot.push_str("\" [label=\"");
-        dot.push_str(&escape_dot(edge.id));
+        dot.push_str(&escape_dot(&edge.id));
         dot.push_str("\"];\n");
     }
 
@@ -115,16 +121,20 @@ pub fn graph_to_dot(graph: &Graph) -> String {
 }
 
 fn hierarchical_ranks(graph: &Graph) -> Vec<usize> {
-    let node_count = graph.nodes.len();
+    let nodes: Vec<_> = graph.nodes().collect();
+    let node_count = nodes.len();
     let mut node_indices = HashMap::with_capacity(node_count);
-    for (idx, node) in graph.nodes.iter().enumerate() {
-        node_indices.insert(node.id, idx);
+    for (idx, node) in nodes.iter().enumerate() {
+        node_indices.insert(node.id.as_str(), idx);
     }
 
     let mut outgoing = vec![Vec::new(); node_count];
     let mut indegree = vec![0usize; node_count];
-    for edge in graph.edges.iter().filter(|edge| edge.active) {
-        if let (Some(&from), Some(&to)) = (node_indices.get(edge.from), node_indices.get(edge.to)) {
+    for edge in graph.edges().filter(|edge| edge.active) {
+        if let (Some(&from), Some(&to)) = (
+            node_indices.get(edge.from.as_str()),
+            node_indices.get(edge.to.as_str()),
+        ) {
             outgoing[from].push(to);
             indegree[to] += 1;
         }

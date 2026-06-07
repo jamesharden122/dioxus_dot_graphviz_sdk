@@ -1,4 +1,7 @@
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum GraphEdgeKind {
     Data,
     Process,
@@ -19,26 +22,26 @@ impl GraphEdgeKind {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct Edge {
-    pub id: &'static str,
-    pub from: &'static str,
-    pub to: &'static str,
+    pub id: String,
+    pub from: String,
+    pub to: String,
     pub kind: GraphEdgeKind,
     pub active: bool,
 }
 
 impl Edge {
-    pub const fn new(
-        id: &'static str,
-        from: &'static str,
-        to: &'static str,
+    pub fn new(
+        id: impl Into<String>,
+        from: impl Into<String>,
+        to: impl Into<String>,
         kind: GraphEdgeKind,
     ) -> Self {
         Self {
-            id,
-            from,
-            to,
+            id: id.into(),
+            from: from.into(),
+            to: to.into(),
             kind,
             active: true,
         }
