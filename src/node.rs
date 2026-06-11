@@ -1,6 +1,11 @@
 use crate::shape::GraphNodeShape;
-use geo::{Polygon, Rect};
 use serde::{Deserialize, Serialize};
+
+pub trait ToolArgs: Send + Sync {}
+
+impl ToolArgs for () {}
+
+impl<T: ToolArgs + ?Sized> ToolArgs for &T {}
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -40,50 +45,17 @@ impl GraphNodeKind {
     }
 
     pub fn default_shape(self) -> GraphNodeShape {
-        match self {
-            Self::Input => {
-                GraphNodeShape::Cylinder(Rect::new((-0.5, -0.35), (0.5, 0.35)).to_polygon())
-            }
-            Self::State => {
-                GraphNodeShape::Ellipse(Rect::new((-0.55, -0.35), (0.55, 0.35)).to_polygon())
-            }
-            Self::DecisionVariable => GraphNodeShape::Diamond(Polygon::new(
-                vec![(0.0, 0.5), (0.5, 0.0), (0.0, -0.5), (-0.5, 0.0), (0.0, 0.5)].into(),
-                vec![],
-            )),
-            Self::PortfolioComponent => GraphNodeShape::Box(Rect::new((-0.5, -0.3), (0.5, 0.3))),
-            Self::PortfolioRiskComponent => GraphNodeShape::Hexagon(Polygon::new(
-                vec![
-                    (-0.5, 0.0),
-                    (-0.25, 0.43),
-                    (0.25, 0.43),
-                    (0.5, 0.0),
-                    (0.25, -0.43),
-                    (-0.25, -0.43),
-                    (-0.5, 0.0),
-                ]
-                .into(),
-                vec![],
-            )),
-            Self::PortfolioAsymmetryComponent => GraphNodeShape::Octagon(Polygon::new(
-                vec![
-                    (-0.2, 0.5),
-                    (0.2, 0.5),
-                    (0.5, 0.2),
-                    (0.5, -0.2),
-                    (0.2, -0.5),
-                    (-0.2, -0.5),
-                    (-0.5, -0.2),
-                    (-0.5, 0.2),
-                    (-0.2, 0.5),
-                ]
-                .into(),
-                vec![],
-            )),
-            Self::Utility => {
-                GraphNodeShape::DoubleCircle(Rect::new((-0.5, -0.5), (0.5, 0.5)).to_polygon())
-            }
-        }
+        let shape_name = match self {
+            Self::Input => "cylinder",
+            Self::State => "ellipse",
+            Self::DecisionVariable => "diamond",
+            Self::PortfolioComponent => "box",
+            Self::PortfolioRiskComponent => "hexagon",
+            Self::PortfolioAsymmetryComponent => "octagon",
+            Self::Utility => "double_circle",
+        };
+
+        GraphNodeShape::default_for_name(shape_name).expect("node kind default shape must exist")
     }
 }
 
@@ -151,5 +123,13 @@ impl<Tool> Node<Tool> {
             active: self.active,
             tool,
         }
+    }
+
+    pub fn tool(&self, args: impl ToolArgs) -> &Self
+    where
+        Tool: Fn(&dyn ToolArgs),
+    {
+        (self.tool)(&args);
+        self
     }
 }

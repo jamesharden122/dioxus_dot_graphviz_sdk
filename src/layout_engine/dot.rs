@@ -20,6 +20,10 @@ pub struct LayoutEdge<EdgeTool = ()> {
     pub edge: Edge<EdgeTool>,
     pub source: GraphPoint,
     pub target: GraphPoint,
+    pub source_slot: usize,
+    pub source_slot_count: usize,
+    pub target_slot: usize,
+    pub target_slot_count: usize,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -80,16 +84,41 @@ where
             })
             .collect();
 
-        let edges = graph
+        let edge_records = graph
             .edges()
             .filter_map(|edge| {
                 let from = graph.node_index(&edge.from)?;
                 let to = graph.node_index(&edge.to)?;
-                Some(LayoutEdge {
+                Some((edge, from, to))
+            })
+            .collect::<Vec<_>>();
+
+        let mut source_slot_counts = vec![0usize; positions.len()];
+        let mut target_slot_counts = vec![0usize; positions.len()];
+        for (_, from, to) in &edge_records {
+            source_slot_counts[*from] += 1;
+            target_slot_counts[*to] += 1;
+        }
+
+        let mut source_slots = vec![0usize; positions.len()];
+        let mut target_slots = vec![0usize; positions.len()];
+        let edges = edge_records
+            .into_iter()
+            .map(|(edge, from, to)| {
+                let source_slot = source_slots[from];
+                let target_slot = target_slots[to];
+                source_slots[from] += 1;
+                target_slots[to] += 1;
+
+                LayoutEdge {
                     edge: edge.clone(),
                     source: positions[from],
                     target: positions[to],
-                })
+                    source_slot,
+                    source_slot_count: source_slot_counts[from],
+                    target_slot,
+                    target_slot_count: target_slot_counts[to],
+                }
             })
             .collect();
 
@@ -221,4 +250,35 @@ fn midpoint(min: f32, max: f32) -> f32 {
 
 fn escape_dot(value: &str) -> String {
     value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::graph::example_graph;
+
+    #[test]
+    fn layout_fans_out_edges_from_weights() {
+        let graph = example_graph();
+        let layout = DotLayoutEngine::default().layout(&graph);
+        let weight_edges = layout
+            .edges
+            .iter()
+            .filter(|edge| edge.edge.from == "Weights")
+            .collect::<Vec<_>>();
+
+        assert_eq!(weight_edges.len(), 3);
+        assert!(weight_edges.iter().all(|edge| edge.source_slot_count == 3));
+        assert_eq!(
+            weight_edges
+                .iter()
+                .map(|edge| (edge.edge.to.as_str(), edge.source_slot))
+                .collect::<Vec<_>>(),
+            vec![
+                ("PortfolioExpectedReturn", 0),
+                ("PortfolioVariance", 1),
+                ("PortfolioSkewness", 2)
+            ]
+        );
+    }
 }

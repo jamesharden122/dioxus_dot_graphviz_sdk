@@ -7,7 +7,7 @@ The crate is split into focused modules:
 - `graph`: graph container and example graph data.
 - `node`: node data and node kind metadata.
 - `shape`: DOT/Graphviz polygon-based node shape metadata.
-- `edge`: directed edge data and edge kind metadata.
+- `edge`: directed edge data, edge kind metadata, and edge route shape metadata.
 - `layout_engine::dot`: hierarchical/layered layout for directed graphs, plus DOT export.
 
 This README is included as the crate-level documentation with `include_str!`.
@@ -67,12 +67,7 @@ let graph: Graph = Graph::from_json(r#"
       "label": "Input",
       "detail": "source",
       "kind": "input",
-      "shape": {
-        "box": {
-          "min": { "x": -0.5, "y": -0.3 },
-          "max": { "x": 0.5, "y": 0.3 }
-        }
-      },
+      "shape": "box",
       "active": true,
       "tool": null
     }
@@ -82,7 +77,7 @@ let graph: Graph = Graph::from_json(r#"
 "#).expect("JSON graph should load");
 ```
 
-The JSON loader does not fill defaults: `id`, `label`, `detail`, `kind`, `shape`, `active`, and `tool` are required for each node, and `id`, `from`, `to`, `kind`, `active`, and `tool` are required for each edge. Use `Graph<MyNodeTool, MyEdgeTool>` to deserialize caller-owned tool payloads without this crate importing those tool modules.
+The JSON loader does not fill missing fields: `id`, `label`, `detail`, `kind`, `shape`, `active`, and `tool` are required for each node, and `id`, `from`, `to`, `kind`, `active`, and `tool` are required for each edge. `shape` may be either a default shape name such as `"box"`, `"ellipse"`, `"diamond"`, `"hexagon"`, or the full geometry object. Use `Graph<MyNodeTool, MyEdgeTool>` to deserialize caller-owned tool payloads without this crate importing those tool modules.
 
 Rayon is available without default features through `dioxus_dot_graphviz_sdk::rayon`, and its prelude is re-exported from `dioxus_dot_graphviz_sdk::parallel`.
 
@@ -112,6 +107,8 @@ For custom edge tool payloads, use `add_layer_with_edges` and return `Edge<MyEdg
 
 `GraphNodeShape` describes how a node should be drawn when exported to DOT/Graphviz. The enum covers the polygon-based shapes from Graphviz, including common forms like `Box`, `Ellipse`, `Circle`, `Diamond`, `Hexagon`, `Octagon`, `Cylinder`, `Folder`, `Component`, and the Graphviz-specific `MDiamond`, `MSquare`, and `MCircle`.
 
+`GraphNodeShape::default_for_name("hexagon")` returns the default geometry used when JSON specifies `"shape": "hexagon"`.
+
 Each `Node::new` assigns a default shape from its semantic kind. Override it explicitly when the drawing needs a different visual grammar:
 
 ```rust
@@ -123,6 +120,8 @@ let node = Node::new("Weights", "Decision weights", "allocator", GraphNodeKind::
 ```
 
 Layout output includes each node's geometry metadata. `LayoutNode::geometry` contains the `geo::Geometry`, its layout `row`, and the bounding `width` and `height`.
+
+`GraphEdgeShape` describes the route family for an edge, currently `Straight`, `Curved`, `Orthogonal`, or `Stepped`.
 
 ## Styling
 

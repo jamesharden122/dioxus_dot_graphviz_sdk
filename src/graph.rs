@@ -1,6 +1,7 @@
 use crate::{
     edge::{Edge, GraphEdgeKind},
     node::Node,
+    shape::GraphNodeShape,
 };
 use petgraph::stable_graph::{NodeIndex, StableGraph};
 use serde::Deserialize;
@@ -51,7 +52,26 @@ impl<NodeTool, EdgeTool> Graph<NodeTool, EdgeTool> {
         NodeTool: for<'de> Deserialize<'de>,
         EdgeTool: for<'de> Deserialize<'de>,
     {
-        let graph: GraphJson<NodeTool, EdgeTool> = serde_json::from_str(json)?;
+        let mut value: serde_json::Value = serde_json::from_str(json)?;
+
+        if let Some(nodes) = value
+            .get_mut("nodes")
+            .and_then(|nodes| nodes.as_array_mut())
+        {
+            for node in nodes {
+                let Some(shape) = node.get_mut("shape") else {
+                    continue;
+                };
+                let Some(shape_name) = shape.as_str().map(str::to_owned) else {
+                    continue;
+                };
+                let shape_value = GraphNodeShape::default_for_name(&shape_name)
+                    .ok_or_else(|| GraphJsonError::UnknownShape(shape_name))?;
+                *shape = serde_json::to_value(shape_value)?;
+            }
+        }
+
+        let graph: GraphJson<NodeTool, EdgeTool> = serde_json::from_value(value)?;
         Self::try_from_parts(graph.nodes, graph.edges).map_err(GraphJsonError::Build)
     }
 
@@ -181,6 +201,7 @@ impl Error for GraphBuildError {}
 pub enum GraphJsonError {
     Parse(serde_json::Error),
     Build(GraphBuildError),
+    UnknownShape(String),
 }
 
 impl fmt::Display for GraphJsonError {
@@ -188,6 +209,7 @@ impl fmt::Display for GraphJsonError {
         match self {
             Self::Parse(error) => write!(formatter, "{error}"),
             Self::Build(error) => write!(formatter, "{error}"),
+            Self::UnknownShape(shape) => write!(formatter, "unknown graph node shape {shape:?}"),
         }
     }
 }
@@ -197,6 +219,7 @@ impl Error for GraphJsonError {
         match self {
             Self::Parse(error) => Some(error),
             Self::Build(error) => Some(error),
+            Self::UnknownShape(_) => None,
         }
     }
 }
@@ -221,18 +244,7 @@ pub const EXAMPLE_GRAPH_JSON: &str = r#"
       "label": "ReadBin data",
       "detail": "input panel",
       "kind": "input",
-      "shape": {
-        "cylinder": {
-          "exterior": [
-            { "x": -0.5, "y": -0.35 },
-            { "x": 0.5, "y": -0.35 },
-            { "x": 0.5, "y": 0.35 },
-            { "x": -0.5, "y": 0.35 },
-            { "x": -0.5, "y": -0.35 }
-          ],
-          "interiors": []
-        }
-      },
+      "shape": "cylinder",
       "active": true,
     "tool": null
     },
@@ -241,18 +253,7 @@ pub const EXAMPLE_GRAPH_JSON: &str = r#"
       "label": "Probability space",
       "detail": "moments",
       "kind": "state",
-      "shape": {
-        "ellipse": {
-          "exterior": [
-            { "x": -0.55, "y": -0.35 },
-            { "x": 0.55, "y": -0.35 },
-            { "x": 0.55, "y": 0.35 },
-            { "x": -0.55, "y": 0.35 },
-            { "x": -0.55, "y": -0.35 }
-          ],
-          "interiors": []
-        }
-      },
+      "shape": "ellipse",
       "active": true,
     "tool": null
     },
@@ -261,18 +262,7 @@ pub const EXAMPLE_GRAPH_JSON: &str = r#"
       "label": "Return processes",
       "detail": "state",
       "kind": "state",
-      "shape": {
-        "oval": {
-          "exterior": [
-            { "x": -0.55, "y": -0.32 },
-            { "x": 0.55, "y": -0.32 },
-            { "x": 0.55, "y": 0.32 },
-            { "x": -0.55, "y": 0.32 },
-            { "x": -0.55, "y": -0.32 }
-          ],
-          "interiors": []
-        }
-      },
+      "shape": "oval",
       "active": true,
     "tool": null
     },
@@ -281,18 +271,7 @@ pub const EXAMPLE_GRAPH_JSON: &str = r#"
       "label": "Decision weights",
       "detail": "allocator",
       "kind": "decision_variable",
-      "shape": {
-        "diamond": {
-          "exterior": [
-            { "x": 0.0, "y": 0.5 },
-            { "x": 0.5, "y": 0.0 },
-            { "x": 0.0, "y": -0.5 },
-            { "x": -0.5, "y": 0.0 },
-            { "x": 0.0, "y": 0.5 }
-          ],
-          "interiors": []
-        }
-      },
+      "shape": "diamond",
       "active": true,
     "tool": null
     },
@@ -301,12 +280,7 @@ pub const EXAMPLE_GRAPH_JSON: &str = r#"
       "label": "Expected return",
       "detail": "component",
       "kind": "portfolio_component",
-      "shape": {
-        "box": {
-          "min": { "x": -0.5, "y": -0.3 },
-          "max": { "x": 0.5, "y": 0.3 }
-        }
-      },
+      "shape": "box",
       "active": true,
     "tool": null
     },
@@ -315,20 +289,7 @@ pub const EXAMPLE_GRAPH_JSON: &str = r#"
       "label": "Variance",
       "detail": "risk",
       "kind": "portfolio_risk_component",
-      "shape": {
-        "hexagon": {
-          "exterior": [
-            { "x": -0.5, "y": 0.0 },
-            { "x": -0.25, "y": 0.43 },
-            { "x": 0.25, "y": 0.43 },
-            { "x": 0.5, "y": 0.0 },
-            { "x": 0.25, "y": -0.43 },
-            { "x": -0.25, "y": -0.43 },
-            { "x": -0.5, "y": 0.0 }
-          ],
-          "interiors": []
-        }
-      },
+      "shape": "hexagon",
       "active": true,
     "tool": null
     },
@@ -337,22 +298,7 @@ pub const EXAMPLE_GRAPH_JSON: &str = r#"
       "label": "Skewness",
       "detail": "asymmetry",
       "kind": "portfolio_asymmetry_component",
-      "shape": {
-        "octagon": {
-          "exterior": [
-            { "x": -0.2, "y": 0.5 },
-            { "x": 0.2, "y": 0.5 },
-            { "x": 0.5, "y": 0.2 },
-            { "x": 0.5, "y": -0.2 },
-            { "x": 0.2, "y": -0.5 },
-            { "x": -0.2, "y": -0.5 },
-            { "x": -0.5, "y": -0.2 },
-            { "x": -0.5, "y": 0.2 },
-            { "x": -0.2, "y": 0.5 }
-          ],
-          "interiors": []
-        }
-      },
+      "shape": "octagon",
       "active": true,
     "tool": null
     },
@@ -361,18 +307,7 @@ pub const EXAMPLE_GRAPH_JSON: &str = r#"
       "label": "Utility",
       "detail": "objective",
       "kind": "utility",
-      "shape": {
-        "double_circle": {
-          "exterior": [
-            { "x": -0.5, "y": -0.5 },
-            { "x": 0.5, "y": -0.5 },
-            { "x": 0.5, "y": 0.5 },
-            { "x": -0.5, "y": 0.5 },
-            { "x": -0.5, "y": -0.5 }
-          ],
-          "interiors": []
-        }
-      },
+      "shape": "double_circle",
       "active": true,
     "tool": null
     }
@@ -556,6 +491,54 @@ mod tests {
     }
 
     #[test]
+    fn builds_graph_from_json_with_default_shape_name() {
+        let graph: Graph = Graph::from_json(
+            r#"
+            {
+              "nodes": [
+                {
+                  "id": "A",
+                  "label": "Input",
+                  "detail": "source",
+                  "kind": "input",
+                  "shape": "cylinder",
+                  "active": true,
+                "tool": null
+                },
+                {
+                  "id": "B",
+                  "label": "Risk",
+                  "detail": "target",
+                  "kind": "portfolio_risk_component",
+                  "shape": "hexagon",
+                  "active": true,
+                "tool": null
+                }
+              ],
+              "edges": [
+                {
+                  "id": "A->B",
+                  "from": "A",
+                  "to": "B",
+                  "kind": "data",
+                  "active": true,
+                "tool": null
+                }
+              ]
+            }
+            "#,
+        )
+        .expect("valid JSON graph should load");
+
+        let shapes = graph
+            .nodes()
+            .map(|node| node.shape.dot_name())
+            .collect::<Vec<_>>();
+
+        assert_eq!(shapes, vec!["cylinder", "hexagon"]);
+    }
+
+    #[test]
     fn builds_graph_from_json_with_explicit_shape() {
         let graph: Graph = Graph::from_json(
             r#"
@@ -607,6 +590,31 @@ mod tests {
 
         assert_eq!(graph.nodes().count(), 2);
         assert_eq!(graph.edges().count(), 1);
+    }
+
+    #[test]
+    fn from_json_rejects_unknown_default_shape_name() {
+        let error = Graph::<(), ()>::from_json(
+            r#"
+            {
+              "nodes": [
+                {
+                  "id": "A",
+                  "label": "Input",
+                  "detail": "source",
+                  "kind": "input",
+                  "shape": "not_a_shape",
+                  "active": true,
+                "tool": null
+                }
+              ],
+              "edges": []
+            }
+            "#,
+        )
+        .expect_err("unknown shape should be rejected");
+
+        assert!(matches!(error, GraphJsonError::UnknownShape(shape) if shape == "not_a_shape"));
     }
 
     #[test]

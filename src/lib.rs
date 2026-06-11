@@ -8,13 +8,14 @@ pub mod shape;
 
 use dioxus::prelude::*;
 
-pub use edge::{Edge, GraphEdgeKind};
+pub use dioxus;
+pub use edge::{Edge, GraphEdgeKind, GraphEdgeShape};
 pub use graph::{example_graph, Graph, GraphBuildError, GraphJsonError, EXAMPLE_GRAPH_JSON};
 pub use layout_engine::dot::{
     graph_to_dot, DotLayoutEngine, DotLayoutOptions, GraphPoint, LayoutEdge, LayoutEngine,
     LayoutGraph, LayoutNode,
 };
-pub use node::{GraphNodeKind, Node};
+pub use node::{GraphNodeKind, Node, ToolArgs};
 pub use rayon;
 pub use shape::{GraphNodeGeometry, GraphNodeShape};
 
@@ -23,7 +24,10 @@ pub mod parallel {
 }
 
 #[component]
-fn node_object(node: LayoutNode) -> Element {
+fn node_object<NodeTool>(node: LayoutNode<NodeTool>) -> Element
+where
+    NodeTool: Clone + PartialEq + 'static,
+{
     let active_class = if node.node.active {
         "is-active"
     } else {
@@ -53,7 +57,10 @@ fn node_object(node: LayoutNode) -> Element {
 }
 
 #[component]
-fn edge_object(edge: LayoutEdge) -> Element {
+fn edge_object<EdgeTool>(edge: LayoutEdge<EdgeTool>) -> Element
+where
+    EdgeTool: Clone + PartialEq + 'static,
+{
     let active_class = if edge.edge.active {
         "is-active"
     } else {
@@ -63,8 +70,26 @@ fn edge_object(edge: LayoutEdge) -> Element {
         "graph-edge graph-edge--{} {active_class}",
         edge.edge.kind.css_class()
     );
-    let dx = edge.target.x - edge.source.x;
+    let source_slot_count = edge.source_slot_count.max(1) as f32;
+    let target_slot_count = edge.target_slot_count.max(1) as f32;
+    let source_offset = if source_slot_count > 1.0 {
+        (edge.source_slot as f32 - (source_slot_count - 1.0) / 2.0) * 4.0
+    } else {
+        0.0
+    };
+    let target_offset = if target_slot_count > 1.0 {
+        (edge.target_slot as f32 - (target_slot_count - 1.0) / 2.0) * 4.0
+    } else {
+        0.0
+    };
+    let source_x = edge.source.x + source_offset;
+    let target_x = edge.target.x + target_offset;
     let dy = edge.target.y - edge.source.y;
+    let direction = if dy >= 0.0 { 1.0 } else { -1.0 };
+    let source_y = edge.source.y + direction * 3.0;
+    let target_y = edge.target.y - direction * 3.0;
+    let dx = target_x - source_x;
+    let dy = target_y - source_y;
     let bend = if dx.abs() < 0.1 && dy.abs() > 24.0 {
         8.0
     } else {
@@ -72,14 +97,14 @@ fn edge_object(edge: LayoutEdge) -> Element {
     };
     let path = format!(
         "M {:.2} {:.2} C {:.2} {:.2}, {:.2} {:.2}, {:.2} {:.2}",
-        edge.source.x,
-        edge.source.y,
-        edge.source.x + bend,
-        edge.source.y + dy * 0.45,
-        edge.target.x + bend,
-        edge.target.y - dy * 0.45,
-        edge.target.x,
-        edge.target.y
+        source_x,
+        source_y,
+        source_x + bend,
+        source_y + dy * 0.45,
+        target_x + bend,
+        target_y - dy * 0.45,
+        target_x,
+        target_y
     );
 
     rsx! {
@@ -91,10 +116,12 @@ fn edge_object(edge: LayoutEdge) -> Element {
     }
 }
 
-#[component]
-pub fn comp_graph_canvas() -> Element {
-    let graph = example_graph();
-    let layout = DotLayoutEngine::default().layout(&graph);
+pub fn graph_canvas<NodeTool, EdgeTool>(graph: &Graph<NodeTool, EdgeTool>) -> Element
+where
+    NodeTool: Clone + PartialEq + 'static,
+    EdgeTool: Clone + PartialEq + 'static,
+{
+    let layout = DotLayoutEngine::default().layout(graph);
 
     rsx! {
         section { class: "graph-canvas-panel",
@@ -121,4 +148,9 @@ pub fn comp_graph_canvas() -> Element {
             }
         }
     }
+}
+
+#[component]
+pub fn comp_graph_canvas() -> Element {
+    graph_canvas(&example_graph())
 }

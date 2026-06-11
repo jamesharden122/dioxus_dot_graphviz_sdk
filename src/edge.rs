@@ -1,5 +1,26 @@
 use serde::{Deserialize, Serialize};
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GraphEdgeShape {
+    #[default]
+    Straight,
+    Curved,
+    Orthogonal,
+    Stepped,
+}
+
+impl GraphEdgeShape {
+    pub fn css_class(self) -> &'static str {
+        match self {
+            Self::Straight => "straight",
+            Self::Curved => "curved",
+            Self::Orthogonal => "orthogonal",
+            Self::Stepped => "stepped",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GraphEdgeKind {
