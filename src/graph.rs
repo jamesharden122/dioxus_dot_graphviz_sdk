@@ -5,7 +5,11 @@ use crate::{
 };
 use petgraph::stable_graph::{NodeIndex, StableGraph};
 use serde::Deserialize;
-use std::{error::Error, fmt};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    error::Error,
+    fmt,
+};
 
 #[derive(Clone, Debug)]
 pub struct Graph<NodeTool = (), EdgeTool = ()> {
@@ -133,12 +137,79 @@ impl<NodeTool, EdgeTool> Graph<NodeTool, EdgeTool> {
         self.state.node_weights()
     }
 
+    pub fn node_mut(&mut self, id: &str) -> Option<&mut Node<NodeTool>> {
+        let index = self.node_graph_index(id)?;
+        self.state.node_weight_mut(index)
+    }
+
     pub fn edges(&self) -> impl Iterator<Item = &Edge<EdgeTool>> + '_ {
         self.state.edge_weights()
     }
 
     pub fn layers(&self) -> &[Vec<NodeIndex>] {
         &self.layers
+    }
+
+    pub fn dependency_levels(&self) -> Result<Vec<Vec<String>>, GraphBuildError> {
+        let node_ids = self.nodes().map(|node| node.id.clone()).collect::<Vec<_>>();
+        let mut indegree = node_ids
+            .iter()
+            .map(|id| (id.clone(), 0usize))
+            .collect::<BTreeMap<_, _>>();
+        let mut children = BTreeMap::<String, Vec<String>>::new();
+
+        for edge in self.edges() {
+            if !indegree.contains_key(&edge.from) || !indegree.contains_key(&edge.to) {
+                continue;
+            }
+            children
+                .entry(edge.from.clone())
+                .or_default()
+                .push(edge.to.clone());
+            if let Some(count) = indegree.get_mut(&edge.to) {
+                *count += 1;
+            }
+        }
+
+        let mut ready = node_ids
+            .iter()
+            .filter(|id| indegree.get(*id).copied().unwrap_or_default() == 0)
+            .cloned()
+            .collect::<Vec<_>>();
+        let mut seen = BTreeSet::new();
+        let mut levels = Vec::new();
+
+        while !ready.is_empty() {
+            let current = ready;
+            ready = Vec::new();
+
+            for node_id in &current {
+                seen.insert(node_id.clone());
+            }
+
+            for node_id in &current {
+                for child_id in children.get(node_id).into_iter().flatten() {
+                    if let Some(count) = indegree.get_mut(child_id) {
+                        *count = count.saturating_sub(1);
+                        if *count == 0 {
+                            ready.push(child_id.clone());
+                        }
+                    }
+                }
+            }
+
+            levels.push(current);
+        }
+
+        if seen.len() != node_ids.len() {
+            let nodes = node_ids
+                .into_iter()
+                .filter(|id| !seen.contains(id))
+                .collect::<Vec<_>>();
+            return Err(GraphBuildError::CyclicDependencies { nodes });
+        }
+
+        Ok(levels)
     }
 
     pub fn node_index(&self, id: &str) -> Option<usize> {
@@ -182,6 +253,9 @@ pub enum GraphBuildError {
         from: String,
         to: String,
     },
+    CyclicDependencies {
+        nodes: Vec<String>,
+    },
 }
 
 impl fmt::Display for GraphBuildError {
@@ -190,6 +264,11 @@ impl fmt::Display for GraphBuildError {
             Self::MissingEdgeEndpoint { edge_id, from, to } => write!(
                 formatter,
                 "edge {edge_id:?} references missing endpoint(s): from={from:?}, to={to:?}"
+            ),
+            Self::CyclicDependencies { nodes } => write!(
+                formatter,
+                "graph has cyclic dependencies: {}",
+                nodes.join(", ")
             ),
         }
     }
@@ -334,30 +413,6 @@ pub const EXAMPLE_GRAPH_JSON: &str = r#"
       "from": "SecurityReturnProcesses",
       "to": "Weights",
       "kind": "process",
-      "active": true,
-    "tool": null
-    },
-    {
-      "id": "SecurityReturnProcesses->PortfolioExpectedReturn",
-      "from": "SecurityReturnProcesses",
-      "to": "PortfolioExpectedReturn",
-      "kind": "state_contribution",
-      "active": true,
-    "tool": null
-    },
-    {
-      "id": "SecurityReturnProcesses->PortfolioVariance",
-      "from": "SecurityReturnProcesses",
-      "to": "PortfolioVariance",
-      "kind": "state_contribution",
-      "active": true,
-    "tool": null
-    },
-    {
-      "id": "SecurityReturnProcesses->PortfolioSkewness",
-      "from": "SecurityReturnProcesses",
-      "to": "PortfolioSkewness",
-      "kind": "state_contribution",
       "active": true,
     "tool": null
     },

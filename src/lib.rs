@@ -12,8 +12,9 @@ pub use dioxus;
 pub use edge::{Edge, GraphEdgeKind, GraphEdgeShape};
 pub use graph::{example_graph, Graph, GraphBuildError, GraphJsonError, EXAMPLE_GRAPH_JSON};
 pub use layout_engine::dot::{
-    graph_to_dot, DotLayoutEngine, DotLayoutOptions, GraphPoint, LayoutEdge, LayoutEngine,
-    LayoutGraph, LayoutNode,
+    graph_to_dot, DotLayoutEngine, DotLayoutOptions, GraphPoint, LayeredSvgGeometry,
+    LayeredSvgGeometryError, LayoutEdge, LayoutEngine, LayoutGraph, LayoutNode,
+    DEFAULT_CONNECTOR_RATIO, DEFAULT_NODE_RATIO,
 };
 pub use node::{GraphNodeKind, Node, ToolArgs};
 pub use rayon;
@@ -70,41 +71,17 @@ where
         "graph-edge graph-edge--{} {active_class}",
         edge.edge.kind.css_class()
     );
-    let source_slot_count = edge.source_slot_count.max(1) as f32;
-    let target_slot_count = edge.target_slot_count.max(1) as f32;
-    let source_offset = if source_slot_count > 1.0 {
-        (edge.source_slot as f32 - (source_slot_count - 1.0) / 2.0) * 4.0
-    } else {
-        0.0
-    };
-    let target_offset = if target_slot_count > 1.0 {
-        (edge.target_slot as f32 - (target_slot_count - 1.0) / 2.0) * 4.0
-    } else {
-        0.0
-    };
-    let source_x = edge.source.x + source_offset;
-    let target_x = edge.target.x + target_offset;
-    let dy = edge.target.y - edge.source.y;
-    let direction = if dy >= 0.0 { 1.0 } else { -1.0 };
-    let source_y = edge.source.y + direction * 3.0;
-    let target_y = edge.target.y - direction * 3.0;
-    let dx = target_x - source_x;
-    let dy = target_y - source_y;
-    let bend = if dx.abs() < 0.1 && dy.abs() > 24.0 {
-        8.0
-    } else {
-        0.0
-    };
+    let marker_url = format!("url(#graph-arrow-{})", edge.edge.kind.css_class());
     let path = format!(
         "M {:.2} {:.2} C {:.2} {:.2}, {:.2} {:.2}, {:.2} {:.2}",
-        source_x,
-        source_y,
-        source_x + bend,
-        source_y + dy * 0.45,
-        target_x + bend,
-        target_y - dy * 0.45,
-        target_x,
-        target_y
+        edge.source.x,
+        edge.source.y,
+        edge.source_control.x,
+        edge.source_control.y,
+        edge.target_control.x,
+        edge.target_control.y,
+        edge.target.x,
+        edge.target.y
     );
 
     rsx! {
@@ -112,6 +89,7 @@ where
             class: "{class}",
             d: "{path}",
             fill: "none",
+            marker_end: "{marker_url}",
         }
     }
 }
@@ -128,8 +106,67 @@ where
             div { class: "graph-canvas-surface",
                 svg {
                     class: "graph-edge-layer",
+                    width: "100%",
+                    height: "100%",
                     view_box: "0 0 100 100",
                     preserve_aspect_ratio: "none",
+                    defs {
+                        marker {
+                            id: "graph-arrow-data",
+                            view_box: "0 0 8 8",
+                            ref_x: "7",
+                            ref_y: "4",
+                            marker_width: "6",
+                            marker_height: "6",
+                            orient: "auto",
+                            marker_units: "strokeWidth",
+                            path { d: "M 0 0 L 8 4 L 0 8 z", fill: "#7bbf8a" }
+                        }
+                        marker {
+                            id: "graph-arrow-process",
+                            view_box: "0 0 8 8",
+                            ref_x: "7",
+                            ref_y: "4",
+                            marker_width: "6",
+                            marker_height: "6",
+                            orient: "auto",
+                            marker_units: "strokeWidth",
+                            path { d: "M 0 0 L 8 4 L 0 8 z", fill: "#74a7c9" }
+                        }
+                        marker {
+                            id: "graph-arrow-state",
+                            view_box: "0 0 8 8",
+                            ref_x: "7",
+                            ref_y: "4",
+                            marker_width: "6",
+                            marker_height: "6",
+                            orient: "auto",
+                            marker_units: "strokeWidth",
+                            path { d: "M 0 0 L 8 4 L 0 8 z", fill: "#74a7c9" }
+                        }
+                        marker {
+                            id: "graph-arrow-decision",
+                            view_box: "0 0 8 8",
+                            ref_x: "7",
+                            ref_y: "4",
+                            marker_width: "6",
+                            marker_height: "6",
+                            orient: "auto",
+                            marker_units: "strokeWidth",
+                            path { d: "M 0 0 L 8 4 L 0 8 z", fill: "#d7b46a" }
+                        }
+                        marker {
+                            id: "graph-arrow-utility",
+                            view_box: "0 0 8 8",
+                            ref_x: "7",
+                            ref_y: "4",
+                            marker_width: "6",
+                            marker_height: "6",
+                            orient: "auto",
+                            marker_units: "strokeWidth",
+                            path { d: "M 0 0 L 8 4 L 0 8 z", fill: "#d98c8c" }
+                        }
+                    }
                     for edge in layout.edges {
                         edge_object {
                             key: "{edge.edge.id}",

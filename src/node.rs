@@ -113,6 +113,11 @@ impl<Tool> Node<Tool> {
         self
     }
 
+    pub fn with_active(mut self, active: bool) -> Self {
+        self.active = active;
+        self
+    }
+
     pub fn with_tool<NextTool>(self, tool: NextTool) -> Node<NextTool> {
         Node {
             id: self.id,
@@ -131,5 +136,17 @@ impl<Tool> Node<Tool> {
     {
         (self.tool)(&args);
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn with_active_updates_node_state() {
+        let node = Node::new("A", "Input", "source", GraphNodeKind::Input).with_active(false);
+
+        assert!(!node.active);
     }
 }

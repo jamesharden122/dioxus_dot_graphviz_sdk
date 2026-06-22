@@ -89,6 +89,11 @@ impl<Tool> Edge<Tool> {
         }
     }
 
+    pub fn with_active(mut self, active: bool) -> Self {
+        self.active = active;
+        self
+    }
+
     pub fn with_tool<NextTool>(self, tool: NextTool) -> Edge<NextTool> {
         Edge {
             id: self.id,
@@ -98,5 +103,17 @@ impl<Tool> Edge<Tool> {
             active: self.active,
             tool,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn with_active_updates_edge_state() {
+        let edge = Edge::new("A->B", "A", "B", GraphEdgeKind::Process).with_active(false);
+
+        assert!(!edge.active);
     }
 }
